@@ -1,90 +1,145 @@
-# SoundCraft — instructions for agents
+# SoundWAVE X — Development Instructions for Coding Agents
 
-SoundCraft is a clean-room, open-source, pure-Rust digital audio workstation targeting Avid Pro Tools parity — and superiority (speed, openness, agent control). It runs natively on macOS, Windows, Linux and FreeBSD, and on the web via WASM. Siblings with the same conventions: `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../pdfcraft` (Acrobat), `../effectcraft` (After Effects), `../designcraft` (InDesign).
+> **Product mission:** Start creating immediately. Go professional when ready.
+>
+> **Status:** SoundWAVE X is an early, independent Rust DAW project derived from SoundCraft. Many crates, package names, file names, commands, and screens still say `soundcraft`. Do not confuse inherited functionality with a finished SoundWAVE X feature.
 
-Standards and learnings shared across the crafting apps live in `../../craftrules` (checked out next to the craft-apps folder, or `storytold/craftrules`). Read its `AGENTS.md` at the start of a session, follow its standards, and contribute reusable learnings back there. Never code: repos don't share code.
+## 1. Product identity and non-negotiable goals
 
-## Start every session here
-1. Read `plan/STATUS.md` (current milestone, next task) and `plan/execution-plan.md`. `plan/` is gitignored (local only). Behaviour reference: `plan/protools/` (observed menu tree `menus-clean.txt` and screenshots; never committed).
-2. Read `ROADMAP.md` (committed) for stage, status and the parity numbers; pick work from `docs/gaps.md`. The progress docs follow craftrules `standards/progress-docs.md`: `docs/target-app-parity.md` (assessment), `docs/gaps.md`, `docs/roadmap.md`, `docs/ui-parity.md`, `docs/file-format-parity.md`, `docs/hardware-parity.md`, `docs/plugin-parity.md`, `docs/localization-parity.md`; `docs/parity-checklist.md` is generated. Update their timestamps and revision history when you change them.
-3. Work autonomously; don't stop to ask unless a decision is genuinely the user's.
+SoundWAVE X is a **free, open-source, content-first digital audio workstation** combining:
 
-## ⚠️ Assets: the absolute rule
-**No Avid, Pro Tools, Adobe or other proprietary iconography, images, sounds, presets or artwork — ever.** This is not negotiable.
-- Every icon in SoundCraft is drawn in code (`crates/ui-egui/src/icons.rs`) or is an original/open asset.
-- Every bundled asset (image, icon, sound, font, preset) must be original, public domain (CC0), or under a permissive open license (MIT, Apache-2.0, BSD, OFL, CC-BY with attribution), or contributed by someone who made it and licenses it openly.
-- **Every bundled asset gets a row in [`ATTRIBUTION.md`](ATTRIBUTION.md)** (path, author, source, license) in the same commit that adds it. `cargo xtask assets` enforces this; CI fails otherwise.
-- Never copy files out of the Pro Tools bundle (`/Applications/Pro Tools.app`): no plugins, presets, icons, sounds, session templates or text. Observing the running app (screenshots kept under `plan/`, menu names) is fine; copying its resources is not.
-- Demo audio is synthesised in code (`crates/engine/src/demo.rs`). Demo and README media must be ours or public domain.
-- The ArtCraft trademarks in `docs/brand/` are the only exception, under `docs/brand/LICENSE-brand.txt`.
+1. **Easy audio editing** inspired by the *accessibility* of Audacity and WavePad: open a file, select a waveform, trim or repair audio, preview an effect, and export without learning studio routing first.
+2. **Immediate music creation** inspired by the *creative readiness* of GarageBand and Logic Pro: ready-made, properly licensed loops, one-shots, drum kits, instrument presets, starter songs, and sound effects. A blank timeline is an option, not the only starting point.
+3. **Professional depth on demand:** multitrack production, MIDI, plugin hosting, automation, sends, buses, advanced routing, and mastering tools remain accessible as users grow.
 
-## Clean-room
-Pro Tools is installed on the dev machine and may be *observed* black-box: run it, use its UI with synthetic sessions, take screenshots by window id (`screencapture -l <id>`), stored only under `plan/protools/screenshots/`. Never read, disassemble or copy anything inside the Pro Tools bundle; never copy Avid icons, artwork, plugin names, presets, or wording beyond feature names. Never copy GPL/AGPL/LGPL code (Ardour, Audacity, LMMS, Freeverb sources…). Our plugins have our own names.
+The tagline is **“Start creating immediately. Go professional when ready.”** This is a product requirement, not only marketing copy.
 
-## Never crash
-People trust SoundCraft with their recordings; a crash loses takes. **This outranks feature work.** Standard: [`craftrules/standards/never-crash.md`](https://github.com/storytold/craftrules/blob/main/standards/never-crash.md).
-- No panics in non-test code: no `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`; no `unsafe` (`unsafe_code = "forbid"`).
-- The one named exception is `soundcraft-clap-host` (`crates/clap-host`), the isolated unsafe helper crate for CLAP plugin FFI: `unsafe_code = "deny"` crate-wide, allowed only in `src/ffi.rs` with a `// SAFETY:` comment on every block, safe `Result` API.
-- The same exception, same rules, for `soundcraft-vst3-host` (`crates/vst3-host`), the isolated unsafe helper crate for VST3 plugin FFI (COM vtables via the `vst3` bindings, module loading, host-side COM objects).
-- And for `soundcraft-au-host` (`crates/au-host`), the isolated unsafe helper crate for Audio Unit FFI (hand-written AudioToolbox/CoreFoundation declarations, macOS only; a safe stub elsewhere).
-- Errors are `Result<T, E>` + `?`. An unfinished feature returns an "unsupported" error.
-- Input-derived numbers are hostile (files, commands, MCP/control params): `get()` not `[i]`, checked/saturating arithmetic, no NaN casts, cap allocations.
-- The audio callback never blocks, allocates in steady state, or panics.
-- Every production crate root carries `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`.
-- `Engine::execute` catches escaped panics and restores the document. Every crash fix lands with a regression test.
+**Do not** treat Pro Tools menu parity, reproducing another application's UI, agent automation, or sheer feature count as the primary objective. Those are inherited SoundCraft concerns and are secondary to usable creation workflows. Observe common interaction patterns, but build an original SoundWAVE X interface and identity.
 
+### Experience requirements
 
-## Architecture (layers enforced by `cargo xtask layers`)
-| Layer | Crate | Role |
+- A new user must be able to open/import an audio file, edit it, audition an effect, and export without configuring buses, plugins, or a complex session first.
+- A new user must be able to launch a music project, browse useful sounds, preview one, place it on a track, press play, save, and reopen successfully.
+- Avoid modal friction, hidden prerequisite setup, jargon-only labels, and empty screens with no suggested next action.
+- Do not hide or delete advanced systems to make the interface simpler; make them discoverable progressively.
+- Preserve keyboard shortcuts, undo/redo, accessible labels, tooltips, visible state, and sensible defaults. Aim for an efficient high-contrast professional application, not a toy/game aesthetic.
+- Prefer a coherent workflow over a collection of disconnected demo screens.
+
+## 2. How to start a coding session
+
+1. Read **this file**, `README.md`, and `ROADMAP.md`. Inspect the actual source, manifests, tests, and relevant `docs/` pages before proposing changes.
+2. Establish what exists by running code or examining tests. Distinguish **working**, **partial**, **stub**, and **planned**. Do not claim a feature exists merely because a menu item or module exists.
+3. Inspect `git status`, the current branch, and any uncommitted user work. Do not discard it.
+4. For substantial tasks, write a concise implementation plan with measurable outcomes, then implement an **integrated, end-to-end working pass** rather than stopping after scaffolding or multiple tiny placeholder milestones.
+5. After implementation, build, exercise the relevant UI and audio path when possible, run tests, and update documentation with actual results and limitations.
+
+**Owner preference:** Substantial one-shot Codex work is welcome when well scoped. An integrated pass may span UI, engine, data model, content, and tests. Keep logical commits, but don't split usable functionality into endless micro-prompts.
+
+## 3. Existing foundation: preserve and evolve
+
+The imported SoundCraft Cargo workspace includes these main layers (verify current paths before editing):
+
+| Area | Existing crates | Role |
 |---|---|---|
-| L0 | `soundcraft-time`, `soundcraft-audio-io`, `soundcraft-midi` | Timebases/tempo/grid; audio file formats + peaks; Standard MIDI Files + MIDI ops |
-| L1 | `soundcraft-dsp` | Plugins (EQ, dynamics, reverb, delay, modulation, harmonic, pitch, utility, instruments), offline processing, meters, FFT |
-| L2 | `soundcraft-model` | The session document (tracks, playlists, clips, mixer, routing, automation, markers, groups) |
-| L3 | `soundcraft-mix` | Mix engine shared by realtime playback and offline bounce |
-| L4 | `soundcraft-engine`, `soundcraft-playback` | Command registry, undo, editing, import/export/bounce, parity catalog; audio device I/O (cpal) |
-| L5 | `soundcraft-automation` | MCP server + control-channel client |
-| L6 | `soundcraft-ui-egui` | The swappable UI (egui) |
-| apps | `soundcraft`, `soundcraft-cli`, `soundcraft-web` | Entry points |
+| Time, formats, MIDI | `crates/time`, `crates/audio-io`, `crates/midi` | Timebases, import/export, MIDI data |
+| DSP | `crates/dsp` | Audio processing, instruments, effects |
+| Session data | `crates/model` | Tracks, clips, automation, routing |
+| Mixing | `crates/mix` | Realtime/offline mixing |
+| Operations | `crates/engine`, `crates/playback` | Commands, editing, recording, devices |
+| Plugin hosts | `crates/clap-host`, `crates/vst3-host`, `crates/au-host` | Third-party plugin integration |
+| Automation | `crates/automation` | Command/control interfaces |
+| GUI | `crates/ui-egui` | egui/eframe application interface |
+| Apps | `apps/*` | Desktop, CLI, web entry points |
 
-Nothing below L6 depends on egui/eframe/winit/rfd. The UI is thin: panels read engine state and act through `engine.execute(id, params)`.
+- Prefer extending existing stable subsystems to reinventing audio, MIDI, or mixing engines.
+- Preserve the separation between the UI and audio/session engine. The UI should dispatch engine commands rather than duplicate edit logic.
+- Inherited command IDs and crate names may remain during the transition. Rename incrementally and atomically with tests; do not perform a cosmetic mass rename that breaks working builds.
+- Preserve cross-platform architecture where feasible. **Windows 11 is the primary initial development and validation platform**, not the only long-term target.
+- Existing SoundCraft documentation can remain as historical/technical reference where relevant, but SoundWAVE X's roadmap and acceptance gates are authoritative for new product priorities.
+- Do not depend on a sibling checkout such as `../craftrules`, local Pro Tools installations, macOS screenshots, or directories outside this repository to perform routine development. Document optional upstream context instead.
 
-## Everything is a command
-User-visible behaviour = a command in `crates/engine/src/cmd/*` (id, label, menu path, shortcut, params doc, `enabled`, `run`) + tests. UI-only commands (windows, dialogs) live in `crates/ui-egui/src/menus.rs` (`UI_COMMANDS`). Menus, shortcuts, the CLI, the control channel and MCP all dispatch the same ids. Programmatic calls never open dialogs; only menu-style invocation (`ui.menu.invoke`) does. New commands go in a new module with its own `specs()`, registered by one line in `cmd/mod.rs`.
+## 4. Integrated product workstreams
 
-Parity is measured, not guessed: `crates/engine/catalog/menus.txt` lists the incumbent's menu leaves (names only). `cargo xtask parity` writes `docs/parity-checklist.md` (generated; the hand-written assessment is `docs/target-app-parity.md`); a test enforces a floor that only rises.
+### A. Quick Edit (beginner-friendly waveform workflow)
 
-## Running and looking at the app
-- `cargo run --release -p soundcraft -- --demo --control 0` (demo session + control channel on a free port; the port is printed).
-- Drive it: JSON lines over TCP, e.g. `{"id":1,"method":"engine.execute","params":{"command":"track.new","params":{"count":2,"format":"stereo"}}}`, then `{"id":2,"method":"ui.screenshot","params":{"path":"/tmp/shot.png"}}`. Methods: `crates/ui-egui/src/control.rs`, docs: `docs/control-protocol.md`.
-- Offscreen UI render (no window, no focus stealing): `cargo run -p soundcraft-ui-egui --example ui_shot -- out.png [script.jsonl]`.
-- Headless: `soundcraft-cli run --demo --cmd 'mix.volume={"track":"Kick","db":-6}' --bounce out.wav`; MCP: `soundcraft-cli mcp [--connect PORT]`.
-- **For UI work, look at the result** (render, read the PNG) and compare with `plan/protools/screenshots/`.
-- Shell gotcha: `mv`/`cp` are aliased interactive here — use `/bin/mv -f` / `/bin/cp -f`.
-- Parallel agents: separate `CARGO_TARGET_DIR` per agent; edit only the crates you own; write manifests atomically; delete your target dir when done (disk).
+- Open/import WAV and other supported formats directly into an obvious edit view.
+- Select, split, trim, move, crop, fade, normalize/gain, undo, preview effects, and export.
+- Make destructive vs. nondestructive operations explicit and safe; preserve originals and undo history.
+- Reduce confusion between AudioSuite-style offline rendering and realtime mixer inserts by explaining the distinction in UI language.
 
-## Quality gates (before every commit)
-`cargo xtask ci` = fmt check, `clippy --workspace --all-targets -D warnings`, tests, assets, layers, wasm check. Commit after each arc of work that builds; one topic per commit.
+### B. Factory Library and creative content (core differentiator)
 
-## Release
-Push to the `release` branch to build signed installers for macOS (universal DMG), Windows (x64/x86 MSI + zip), Linux (AppImage, deb, rpm, tar.gz, Flatpak; riscv64 tar.gz), FreeBSD and Web (wasm zip). Version: `cargo xtask version [set X.Y.Z]`. See `docs/release-playbook.md` and craftrules `release/playbook.md`.
+- Build a scalable first-party **Library Browser**: categories, tags, text search, audition, favorites, metadata, file availability, and drag-and-drop import.
+- Plan native support for one-shots, tempo-labeled loops, MIDI patterns, presets, and full starter projects.
+- Provide tempo/key metadata and transparent stretching/tuning controls where supported; do not silently damage audio or pretend tempo matching exists if it does not.
+- Seed with a **small, useful, verified, redistributable** set, then expand curated content and optional free packs. Do not ship a fake browser with placeholder sounds or merely relabel the generated demo as a factory library.
+- Treat organized, ready-to-use **actual audio content** as a release requirement, not an optional enhancement or something users must create themselves.
+- Keep content separate from executable code where practical, with explicit versioned manifests and optional pack installation. Avoid making the initial executable unnecessarily massive.
 
-## Roadmap
-`ROADMAP.md` (committed) is the one-page summary (stage, numbers, dimensions, languages, progress log); milestones live in `docs/roadmap.md`. Update both whenever a milestone lands, and close or shrink the matching `docs/gaps.md` entry.
+### C. Create Music
 
-## Contributor credits (About window)
+- Starter project templates for drums, songs, podcasts, and sound design.
+- Intuitive MIDI piano roll, step sequencing, drum patterns, preset-driven instruments, easy loop arrangement.
+- Generative/procedural patterns are welcome as **additions to**, not replacements for, real premade loops and samples.
 
-- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
-  (commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
-  themselves). See `docs/contributors.md`.
-- **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
-  username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
-  whether they want to be credited by more than their username: a real name, a display name, and/or
-  their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
-  (copy the template at the top of the file, or run
-  `python3 ../../craftrules/scripts/contributors.py --add-me . --real-name "…" --sync-github-name`)
-  and include it in their PR, committed as them. If no, change nothing: they are credited as
-  `@username` anyway.
-- Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
-  GitHub profiles). Never hand-edit `contributors.json`.
-- Maintainers refresh the stats with `python3 ../../craftrules/scripts/contributors.py .` (it also
-  re-verifies who wrote each `people.toml` entry; `--check` only verifies).
+### D. Advanced Studio
+
+- Retain and improve routing, buses, sends, plugin chains, MIDI, recording, automation, multitrack mixing, and mastering.
+- Progressive disclosure: discoverable advanced panels/workspaces without blocking simple editing.
+
+### E. Hardware and platform resilience
+
+- Good defaults, device enumeration and selection, sample rate/buffer controls, loss/reconnect handling, useful errors, and durable user preferences.
+- Exercise speakers, wired/Bluetooth headphones, USB interfaces, and other ordinary working Windows outputs where available. Never require switching to a different device as the only workaround.
+
+## 5. Real-time audio and data-safety rules
+
+These inherited SoundCraft safeguards remain critical:
+
+- **Audio callback:** no allocations, locks, waiting, disk I/O, panic, or logging in steady-state real-time paths.
+- Validate external files, metadata, plugin parameters, sizes, audio sample counts, and numeric input. Reject invalid operations safely; avoid unbounded allocations and NaNs.
+- Avoid panics in production code; prefer fallible APIs and actionable errors. Isolate any necessary `unsafe` for plugin FFI with documented invariants.
+- Recording should prioritize data retention, recoverability, autosave, consistent session state, and handling unexpected device loss.
+- Test nondestructive editing, undo/redo, import/export roundtrips, waveform bounds, sample-rate changes, loop boundaries, session reopen, and missing-media scenarios.
+- Do not remove existing regression coverage for styling or rebranding work.
+
+## 6. Copyright, attribution, trademarks, and factory assets
+
+- Preserve the imported SoundCraft copyright notices, commit history, applicable `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, and `ATTRIBUTION.md` terms. The software code currently declares `MIT OR Apache-2.0`; independently licensed third-party assets do **not** inherit that license automatically.
+- **Do not use ArtCraft names/logos/wordmarks/icons as SoundWAVE X branding.** Remove protected brand assets from modified product distributions as required by their separate license; keep truthful textual credit to the SoundCraft/ArtCraft contributors.
+- Do not copy Avid, Apple, Adobe, or other proprietary samples, loops, presets, icons, screenshots, fonts, bundled instruments, or application assets.
+- Bundle an asset only when the rights to **redistribute that raw asset in a DAW/library** are documented, not merely permission to use it inside a song. Prefer original material and verified CC0; CC-BY and other compatible content need attribution and term review.
+- For every bundled asset, record at least `path`, `name`, `creator`, `source URL/provenance`, `license`, `version/date`, and any attribution requirements in an auditable manifest. Keep `ATTRIBUTION.md` updated and preserve existing asset checks.
+- Do not assume an online uploader owns their audio or that a label like “royalty-free” grants sample-pack redistribution rights. Handle ambiguous licensing by excluding the asset.
+- Track factory sounds, user files, and third-party downloaded packs distinctly. Never silently upload or transmit user recordings.
+
+## 7. Working commands (current imported baseline)
+
+From the repository root on Windows PowerShell:
+
+```powershell
+cargo run --release -p soundcraft -- --demo
+cargo test --workspace
+cargo xtask ci
+```
+
+These are **inherited commands**, not the final SoundWAVE X executable names. Verify any changes to Cargo manifests and launch commands. `cargo xtask ci` may contain inherited parity/branding checks that need to be re-scoped as part of the migration; report baseline failures rather than bypassing them.
+
+When building UI work, inspect actual visual results and user flows, not only compiler output. Record explicit pass/fail evidence. Do not imply Windows validation proves other platforms.
+
+## 8. Completion criteria for integrated passes
+
+A pass is not complete unless it:
+
+1. Delivers a usable end-to-end user workflow, not only architecture or a mock screen.
+2. Preserves existing supported audio/edit functionality and upstream legal notices.
+3. Includes error handling, tests, and at least a manual validation checklist for GUI/audio behaviors.
+4. Builds on its stated platforms (or explicitly documents blockers).
+5. Updates `README.md`, `ROADMAP.md`, and relevant technical docs to distinguish **done**, **partial**, and **planned**.
+6. Reports source files changed, executed validation, known limitations, and next dependencies truthfully.
+
+## 9. Release philosophy
+
+Release quality is measured by: **time to first sound**, **first successful edit/export**, **first loop-based musical arrangement**, **reliability with everyday audio devices**, **content quality/licensing**, and **professional depth without beginner friction**.
+
+Do **not** report SoundCraft's Pro Tools parity percentages as SoundWAVE X readiness. Treat SoundWAVE X as its own product with its own measured acceptance gates. Never market an unimplemented loop library, feature, or supported platform as shipped.
